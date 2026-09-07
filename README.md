@@ -21,7 +21,6 @@ churn-predictor/
 ├── results/
 │   ├── metrics.jsonl            # appended run metrics
 │   └── retention_recommendations.csv
-├── docs/
 └── test_churn.py                # end-to-end self-check (ACs 1-5)
 ```
 

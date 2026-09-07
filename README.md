@@ -4,6 +4,9 @@ Predicts customer churn on the Telco dataset and recommends a retention action
 for each customer in the top-risk decile, with the top-3 churn drivers per
 customer.
 
+Executive summary (problem, approach, results, future work):
+**<https://sabilmakbar.github.io/churn-predictor/>**
+
 ## Structure
 
 ```
@@ -21,6 +24,8 @@ churn-predictor/
 ├── results/
 │   ├── metrics.jsonl            # appended run metrics
 │   └── retention_recommendations.csv
+├── docs/
+│   └── index.html               # executive summary, published via GitHub Pages
 └── test_churn.py                # end-to-end self-check (ACs 1-5)
 ```
 

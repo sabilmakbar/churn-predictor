@@ -1,4 +1,6 @@
 dev/
+docs/specs/
+docs/decision-spine.md
 .venv/
 __pycache__/
 *.egg-info/

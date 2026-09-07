@@ -1,0 +1,18 @@
+[project]
+name = "churn-predictor"
+version = "0.1.0"
+description = "Telco customer churn prediction with per-customer retention recommendations"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas",
+    "scikit-learn",
+]
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["churn"]

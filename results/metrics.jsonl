@@ -1,0 +1,2 @@
+{"ts": "2026-09-07T11:48:41+00:00", "script": "train_churn", "model": "LogisticRegression", "roc_auc": 0.8421349040274871, "pr_auc": 0.6343385058492537, "recall_top_decile": 0.2807486631016043}
+{"ts": "2026-09-07T11:48:41+00:00", "script": "train_churn", "model": "HistGradientBoosting", "roc_auc": 0.8332454984628898, "pr_auc": 0.6386915669721297, "recall_top_decile": 0.28342245989304815}

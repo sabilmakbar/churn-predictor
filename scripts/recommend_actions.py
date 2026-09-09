@@ -46,6 +46,7 @@ def main():
         }
     )
     out["recommended_action"] = [recommend_action(row) for row in drivers]
+    out["expected_monthly_loss"] = (proba * df["MonthlyCharges"]).round(2)
 
     n_top = max(1, int(np.ceil(0.1 * len(out))))
     out = out.sort_values("churn_probability", ascending=False).head(n_top)

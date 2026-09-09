@@ -180,8 +180,23 @@
     customer&rsquo;s top-3 drivers are then passed through a small rule table
     (contract offer, onboarding program, fiber price review, autopay discount,
     support bundle) that picks one action per customer; the first driver with a
-    matching rule wins. Every run appends its metrics to a shared
+    matching rule wins. Each recommended customer also carries an
+    <code>expected_monthly_loss</code> column (churn probability &times; monthly
+    charges), so the queue can be worked by revenue at risk, not just risk.
+    Every run appends its metrics to a shared
     <code>results/metrics.jsonl</code> log.
+  </p>
+  <p class="body-text" style="margin-top: 12px;">
+    Two extensions answer <em>when</em> and <em>whom to treat</em>. A survival
+    layer (lifelines) fits Kaplan&ndash;Meier retention curves per contract type
+    and a Cox proportional-hazards model with tenure as the duration; covariates
+    exclude tenure and TotalCharges (a duration leak), and each active customer
+    gets conditional churn-within-6/12-month probabilities. And a
+    <strong>SIMULATED</strong> uplift study runs a fixed-seed synthetic campaign
+    with a known built-in treatment effect on top of the real customers, then
+    checks that a T-learner (two logistic pipelines) recovers the persuadable
+    segment &mdash; ground truth is known by construction, so the recovery is
+    verifiable.
   </p>
 
   <h2>4. Results and discussion</h2>
@@ -191,7 +206,11 @@
     <div class="tile"><div class="value">2.8&times;</div>
       <div class="label">churners captured in the top decile vs random targeting</div></div>
     <div class="tile"><div class="value">705</div>
-      <div class="label">customers on the ranked action list, each with drivers and an action</div></div>
+      <div class="label">customers on the ranked action list, each with drivers, an action, and revenue at risk</div></div>
+    <div class="tile"><div class="value">0.846</div>
+      <div class="label">Cox survival model test concordance</div></div>
+    <div class="tile"><div class="value">2.07&times;</div>
+      <div class="label">top-decile vs population true effect recovered in the SIMULATED uplift study</div></div>
   </div>
 
   <div class="chart-card">
@@ -213,6 +232,24 @@
     <thead><tr><th>Model</th><th class="num">ROC-AUC</th><th class="num">PR-AUC</th><th class="num">Recall @ top decile</th></tr></thead>
     <tbody id="tbody"></tbody>
   </table>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-title">Survival: % still customer, by contract type</div>
+    <div class="chart-sub">Kaplan&ndash;Meier retention at 12 / 24 / 48 months; hover a bar for all three horizons</div>
+    <div id="survival-chart"></div>
+    <div class="axis"><span></span>
+      <div class="ticks"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
+    </div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-title">Uplift recovery: mean TRUE effect per predicted-uplift decile</div>
+    <div class="chart-sub">SIMULATED campaign with a known built-in effect; decile 1 = highest predicted uplift; hover a bar for the decile detail</div>
+    <div id="uplift-chart"></div>
+    <div class="axis"><span></span>
+      <div class="ticks"><span>0</span><span>0.05</span><span>0.10</span><span>0.15</span></div>
+    </div>
   </div>
 
   <h3 class="findings-title">What we found</h3>
@@ -241,27 +278,17 @@
   <p class="caveats">
     Caveats: metrics come from a single fixed-seed split (no cross-validation at
     this scope); the action rules are heuristics, not measured treatment effects
-    &mdash; nothing here estimates whether an action actually prevents churn
-    (see future work); driver positivity is verified empirically on this dataset
-    rather than enforced in code. Public dataset; no confidential data anywhere.
+    &mdash; the uplift study is a SIMULATED campaign with a known built-in
+    effect that validates the T-learner method, and says nothing about real
+    campaign effects; churn horizons beyond the 72-month observed tenure grid
+    (t+12 exceeds it for roughly a quarter of active customers) use the model's
+    flat extrapolation, so their risk is understated; driver positivity is
+    verified empirically on this dataset rather than enforced in code. Public
+    dataset; no confidential data anywhere.
   </p>
 
   <h2>5. Future improvements</h2>
   <ul class="body-list">
-    <li><strong>Uplift modelling &mdash; target the persuadable, not the doomed.</strong>
-      Churn probability answers &ldquo;who will leave&rdquo;; the retention
-      decision needs &ldquo;who will stay <em>because we intervened</em>.&rdquo;
-      With campaign-outcome logs, a two-model or T-learner uplift setup ranks by
-      treatment effect instead, and stops spending discounts on customers who
-      would churn (or stay) regardless.</li>
-    <li><strong>Expected-value ranking.</strong> Rank by
-      churn probability &times; revenue at risk (monthly charges &times; expected
-      remaining lifetime) rather than probability alone, so the queue maximizes
-      retained revenue, not caught churners.</li>
-    <li><strong>Survival analysis for the tenure signal.</strong> Tenure dominating
-      a binary classifier is really a time-to-event pattern; a Cox or gradient-boosted
-      survival model handles censoring properly and yields &ldquo;churn within
-      k months&rdquo; curves that time the outreach, not just rank it.</li>
     <li><strong>Calibration before budgeting.</strong> Isotonic or Platt
       calibration on a validation fold, so &ldquo;top decile&rdquo; can become
       &ldquo;everyone above a break-even probability&rdquo; once action costs are
@@ -315,6 +342,68 @@
     tr.innerHTML = `<td>${m.name}</td><td class="num">${fmt(m.roc)}</td>
                     <td class="num">${fmt(m.pr)}</td><td class="num">${fmt(m.rec)}</td>`;
     tbody.appendChild(tr);
+  }
+
+  function addBarRow(container, name, frac, valText, tipHtml, segments) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML =
+      `<span class="name">${name}</span>
+       <div class="track">
+         <div class="gridlines">${"<span></span>".repeat(segments)}</div>
+         <div class="bar s1" style="width:${frac * 100}%"></div>
+         <span class="val" style="left:calc(${frac * 100}% + 6px)">${valText}</span>
+       </div>`;
+    const bar = row.querySelector(".bar");
+    bar.addEventListener("mousemove", e => {
+      tip.innerHTML = tipHtml;
+      tip.style.display = "block";
+      tip.style.left = Math.min(e.clientX + 14, innerWidth - 280) + "px";
+      tip.style.top = (e.clientY + 14) + "px";
+    });
+    bar.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+    container.appendChild(row);
+  }
+
+  // Kaplan-Meier retention by contract (results/survival_by_contract.csv).
+  const KM = [
+    { contract: "Month-to-month", r: { 12: 0.703, 24: 0.586, 48: 0.397 } },
+    { contract: "One year",       r: { 12: 0.991, 24: 0.978, 48: 0.917 } },
+    { contract: "Two year",       r: { 12: 1.000, 24: 1.000, 48: 0.996 } },
+  ];
+  const survChart = document.getElementById("survival-chart");
+  const pct = v => (v * 100).toFixed(1) + "%";
+  for (const c of KM) {
+    for (const m of [12, 24, 48]) {
+      addBarRow(survChart, `${c.contract} &middot; ${m} mo`, c.r[m], pct(c.r[m]),
+        `<div class="t-name">${c.contract}</div>
+         <div class="t-row">still customer at 12 mo: ${pct(c.r[12])}</div>
+         <div class="t-row">still customer at 24 mo: ${pct(c.r[24])}</div>
+         <div class="t-row">still customer at 48 mo: ${pct(c.r[48])}</div>`, 4);
+    }
+  }
+
+  // SIMULATED uplift recovery by predicted-uplift decile
+  // (results/uplift_deciles_simulated.csv); axis max 0.15.
+  const UPLIFT = [
+    { d: 1,  pred: 0.1895,  eff: 0.1357, t: 0.323, c: 0.514 },
+    { d: 2,  pred: 0.1372,  eff: 0.1171, t: 0.373, c: 0.519 },
+    { d: 3,  pred: 0.1098,  eff: 0.0973, t: 0.397, c: 0.468 },
+    { d: 4,  pred: 0.0867,  eff: 0.0765, t: 0.349, c: 0.449 },
+    { d: 5,  pred: 0.0660,  eff: 0.0556, t: 0.239, c: 0.266 },
+    { d: 6,  pred: 0.0466,  eff: 0.0440, t: 0.161, c: 0.230 },
+    { d: 7,  pred: 0.0288,  eff: 0.0366, t: 0.080, c: 0.118 },
+    { d: 8,  pred: 0.0154,  eff: 0.0319, t: 0.052, c: 0.038 },
+    { d: 9,  pred: 0.0076,  eff: 0.0307, t: 0.014, c: 0.035 },
+    { d: 10, pred: -0.0001, eff: 0.0309, t: 0.048, c: 0.048 },
+  ];
+  const upliftChart = document.getElementById("uplift-chart");
+  for (const u of UPLIFT) {
+    addBarRow(upliftChart, `decile ${u.d}`, u.eff / 0.15, u.eff.toFixed(3),
+      `<div class="t-name">Decile ${u.d} (SIMULATED)</div>
+       <div class="t-row">mean predicted uplift ${u.pred.toFixed(4)}</div>
+       <div class="t-row">mean TRUE effect ${u.eff.toFixed(4)}</div>
+       <div class="t-row">simulated churn: treated ${pct(u.t)} vs control ${pct(u.c)}</div>`, 3);
   }
 </script>
 </body>
